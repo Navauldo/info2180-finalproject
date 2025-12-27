@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // Check if user is logged in and is admin
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'Admin') {
     $_SESSION['error'] = "Access denied. Admin only.";
-    header('Location: ../../public/login.php');
+    header('Location: ../../public/index.php');
     exit;
 }
 

@@ -4,7 +4,7 @@ ini_set('display_errors', 1);
 
 session_start();
 if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
+    header('Location: index.php');
     exit;
 }
 
@@ -18,10 +18,14 @@ if (!$contactId) {
     exit;
 }
 
+// Fetch contact with creator and assigned user
 $stmt = $conn->prepare("
-    SELECT c.*, u.firstname AS creator_first, u.lastname AS creator_last
+    SELECT c.*, 
+           u.firstname AS creator_first, u.lastname AS creator_last,
+           a.firstname AS assigned_first, a.lastname AS assigned_last
     FROM contacts c
     JOIN users u ON c.created_by = u.id
+    LEFT JOIN users a ON c.assigned_to = a.id
     WHERE c.id = ?
 ");
 $stmt->execute([$contactId]);
@@ -36,7 +40,20 @@ if (!$contact) {
 
 <div class="content">
 
-    <!-- MAIN CARD -->
+    <!-- Notification div -->
+    <div id="notification" style="
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #4caf50;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        display: none;
+        z-index: 9999;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    "></div>
+
     <div class="card">
         <div class="card-body">
 
@@ -91,14 +108,17 @@ if (!$contact) {
 
                 <div class="col-md-6 mb-3">
                     <div class="text-muted small">Assigned To</div>
-                    <div><?= htmlspecialchars($contact['assigned_to']) ?></div>
+                    <div>
+                        <?= $contact['assigned_to'] ? 
+                            htmlspecialchars($contact['assigned_first'].' '.$contact['assigned_last']) : 'Unassigned' ?>
+                    </div>
                 </div>
             </div>
 
-            <!-- NOTES LIST -->
+            <!-- NOTES -->
             <div class="mb-4">
                 <h6 class="fw-semibold mb-3">Notes</h6>
-                <div id="notes"></div>
+                <div id="notes" data-contact-id="<?= $contactId ?>"></div>
             </div>
 
             <!-- ADD NOTE -->
@@ -127,11 +147,88 @@ if (!$contact) {
 
 </div>
 
-<script src="../assets/js/app.js"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        loadNotes(<?= $contactId ?>);
-    });
+// Show notifications
+function showNotification(message, color = '#4caf50') {
+    const notif = document.getElementById('notification');
+    notif.textContent = message;
+    notif.style.background = color;
+    notif.style.display = 'block';
+    setTimeout(() => { notif.style.display = 'none'; }, 3000);
+}
+
+// ASSIGN CONTACT
+function assignToMe(contactId) {
+    fetch('assign_contact.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `contact_id=${contactId}`
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Contact assigned to you successfully!');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showNotification(data.message || 'Failed to assign contact.', '#f44336');
+        }
+    })
+    .catch(() => showNotification('Error assigning contact.', '#f44336'));
+}
+
+// SWITCH CONTACT TYPE
+function switchType(contactId, type) {
+    fetch('switch_type.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `contact_id=${contactId}&type=${encodeURIComponent(type)}`
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(`Contact type switched to "${type}" successfully!`);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showNotification(data.message || 'Failed to switch type.', '#f44336');
+        }
+    })
+    .catch(() => showNotification('Error switching type.', '#f44336'));
+}
+
+// NOTES FUNCTIONS
+function loadNotes(contactId) {
+    fetch(`load_notes.php?contact_id=${contactId}`)
+        .then(res => res.text())
+        .then(data => { document.getElementById('notes').innerHTML = data; })
+        .catch(error => console.error('Error loading notes:', error));
+}
+
+function addNote(contactId) {
+    const text = document.getElementById('noteText').value;
+    if (!text.trim()) { showNotification("Please enter a note.", '#f44336'); return; }
+
+    fetch('add_note.php', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/x-www-form-urlencoded' },
+        body: `contact_id=${contactId}&comment=${encodeURIComponent(text)}`
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'success') {
+            document.getElementById('noteText').value = '';
+            loadNotes(contactId);
+        } else showNotification(data.message, '#f44336');
+    })
+    .catch(() => showNotification('Error adding note.', '#f44336'));
+}
+
+// AUTO-LOAD NOTES
+document.addEventListener('DOMContentLoaded', () => {
+    const notesDiv = document.getElementById('notes');
+    if (notesDiv && notesDiv.dataset.contactId) {
+        loadNotes(notesDiv.dataset.contactId);
+    }
+});
 </script>
 
 <?php require_once '../src/views/footer.php'; ?>
